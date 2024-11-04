@@ -1,16 +1,37 @@
-// exporter/clickhouseexporter/config.go
+// config.go
 package clickhouseexporter
 
-// Config defines configuration for ClickHouse exporter.
+import (
+    "os"
+    "fmt"
+)
+
 type Config struct {
-    Endpoint string `mapstructure:"endpoint"`
-    Username string `mapstructure:"username"`
-    Password string `mapstructure:"password"`
-    Database string `mapstructure:"database"`
-    Secure   bool   `mapstructure:"secure"`
+    Endpoint string
+    Username string
+    Password string
+    Database string
+    Secure   bool
 }
 
-// Validate checks if the exporter configuration is valid
-func (cfg *Config) Validate() error {
-    return nil
+func NewConfig() (*Config, error) {
+    password := os.Getenv("CLICKHOUSE_PASSWORD")
+    if password == "" {
+        return nil, fmt.Errorf("CLICKHOUSE_PASSWORD environment variable is not set")
+    }
+
+    return &Config{
+        Endpoint: getEnvWithDefault("CLICKHOUSE_ENDPOINT", "t3v0qmphlz.ap-south-1.aws.clickhouse.cloud:9440"),
+        Username: getEnvWithDefault("CLICKHOUSE_USERNAME", "default"),
+        Password: password,
+        Database: getEnvWithDefault("CLICKHOUSE_DATABASE", "otel"),
+        Secure:   true,
+    }, nil
+}
+
+func getEnvWithDefault(key, defaultValue string) string {
+    if value := os.Getenv(key); value != "" {
+        return value
+    }
+    return defaultValue
 }

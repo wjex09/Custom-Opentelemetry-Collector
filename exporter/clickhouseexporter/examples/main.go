@@ -7,13 +7,63 @@ import (
     "log"
     "time"
     "crypto/tls"
+    "os"
 
     "github.com/ClickHouse/clickhouse-go/v2"
     "github.com/open-telemetry/opentelemetry-collector-contrib/exporter/clickhouseexporter"
     "go.opentelemetry.io/collector/pdata/pcommon"
-    "go.opentelemetry.io/collector/pdata/pmetric"
+    "go.opentelemetry.io/collector/pdata/pmetric" 
+    "github.com/joho/godotenv" 
+    "path/filepath"
 )
 
+
+
+// exporter/clickhouseexporter/examples/main.go
+func init() {
+    // Print working directory
+    workDir, err := os.Getwd()
+    if err != nil {
+        log.Printf("Error getting working directory: %v", err)
+    }
+    fmt.Printf("Working directory: %s\n", workDir)
+
+    // Try multiple possible locations
+    possiblePaths := []string{
+        "../.env",                // Relative to examples
+        "../../clickhouseexporter/.env", // From examples to clickhouseexporter
+        ".env",                   // Current directory
+    }
+
+    var loaded bool
+    for _, path := range possiblePaths {
+        absPath, err := filepath.Abs(path)
+        if err != nil {
+            continue
+        }
+        fmt.Printf("Trying to load .env from: %s\n", absPath)
+        
+        if err := godotenv.Load(path); err == nil {
+            fmt.Printf("Successfully loaded .env from: %s\n", absPath)
+            loaded = true
+            break
+        }
+    }
+
+    if !loaded {
+        log.Printf("Could not find .env file in any location")
+    }
+
+    // Verify environment variables
+    vars := []string{"CLICKHOUSE_ENDPOINT", "CLICKHOUSE_USERNAME", "CLICKHOUSE_PASSWORD", "CLICKHOUSE_DATABASE"}
+    for _, v := range vars {
+        if val := os.Getenv(v); val != "" {
+            fmt.Printf("%s is set\n", v)
+        } else {
+            fmt.Printf("%s is NOT set\n", v)
+        }
+    }
+}
 func main() {
     ctx := context.Background()
     
@@ -31,15 +81,26 @@ func main() {
         log.Printf("Failed to export metrics: %v", err)
     }
 
+    // Get configuration from environment variables
+    endpoint := os.Getenv("CLICKHOUSE_ENDPOINT")
+    username := os.Getenv("CLICKHOUSE_USERNAME")
+    password := os.Getenv("CLICKHOUSE_PASSWORD")
+    database := os.Getenv("CLICKHOUSE_DATABASE")
+
+    // Validate required environment variables
+    if endpoint == "" || username == "" || password == "" || database == "" {
+        log.Fatal("Missing required environment variables")
+    }
+
     // Verify the inserted data
     conn := clickhouse.OpenDB(&clickhouse.Options{
-        Addr: []string{"t3v0qmphlz.ap-south-1.aws.clickhouse.cloud:9440"},
+        Addr: []string{endpoint},
         Protocol: clickhouse.Native,
         TLS: &tls.Config{},
         Auth: clickhouse.Auth{
-            Database: "otel",
-            Username: "default",
-            Password: "CSgSGq25q4Re.",
+            Database: database,
+            Username: username,
+            Password: password,
         },
     })
 
@@ -86,6 +147,7 @@ func main() {
         log.Printf("Error iterating rows: %v", err)
     }
 }
+
 
 func createSampleMetrics() pmetric.Metrics {
     metrics := pmetric.NewMetrics()

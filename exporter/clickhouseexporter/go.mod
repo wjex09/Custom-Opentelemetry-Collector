@@ -5,6 +5,7 @@ go 1.21
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.17.1
+	github.com/joho/godotenv v1.5.1
 	go.opentelemetry.io/collector/component v0.96.0
 	go.opentelemetry.io/collector/consumer v0.96.0
 	go.opentelemetry.io/collector/exporter v0.96.0

@@ -7,7 +7,8 @@ import (
     "time"
     "crypto/tls"
     "database/sql"
-
+    "github.com/joho/godotenv"
+    "os"
     "github.com/ClickHouse/clickhouse-go/v2"
     "go.opentelemetry.io/collector/component"
     "go.opentelemetry.io/collector/consumer"
@@ -23,19 +24,42 @@ type clickhouseExporter struct {
     logger *zap.Logger
 }
 
+func init() {
+    // Load .env file
+    if err := godotenv.Load(); err != nil {
+        // It's okay if .env doesn't exist in production
+        fmt.Printf("Note: .env file not found. Using environment variables.\n")
+    }
+}
+
 // NewClickHouseExporter creates a new instance of clickhouseExporter for standalone usage
 func NewClickHouseExporter(ctx context.Context) (exporter.Metrics, error) {
     logger, _ := zap.NewProduction()
 
+    // Get configuration from environment variables
+    endpoint := os.Getenv("CLICKHOUSE_ENDPOINT")
+    username := os.Getenv("CLICKHOUSE_USERNAME")
+    password := os.Getenv("CLICKHOUSE_PASSWORD")
+    database := os.Getenv("CLICKHOUSE_DATABASE")
+
+    // Validate required environment variables
+    if endpoint == "" || username == "" || password == "" {
+        return nil, fmt.Errorf("missing required environment variables: CLICKHOUSE_ENDPOINT, CLICKHOUSE_USERNAME, CLICKHOUSE_PASSWORD")
+    }
+
+    if database == "" {
+        database = "otel" // default database name
+    }
+
     // Connect using the native protocol
     db := clickhouse.OpenDB(&clickhouse.Options{
-        Addr: []string{"t3v0qmphlz.ap-south-1.aws.clickhouse.cloud:9440"},
+        Addr: []string{endpoint},
         Protocol: clickhouse.Native,
         TLS: &tls.Config{},
         Auth: clickhouse.Auth{
-            Database: "otel",
-            Username: "default",
-            Password: "CSgSGq25q4Re.",
+            Database: database,
+            Username: username,
+            Password: password,
         },
         Debug: true,
         Settings: clickhouse.Settings{
@@ -50,6 +74,12 @@ func NewClickHouseExporter(ctx context.Context) (exporter.Metrics, error) {
     if err := db.Ping(); err != nil {
         return nil, fmt.Errorf("failed to ping ClickHouse: %w", err)
     }
+
+    logger.Info("Successfully connected to ClickHouse",
+        zap.String("endpoint", endpoint),
+        zap.String("database", database),
+        zap.String("username", username),
+    )
 
     return &clickhouseExporter{
         db:     db,
@@ -165,6 +195,7 @@ func (e *clickhouseExporter) exportDataPoints(
         labels := attributesToMap(point.Attributes())
         
         var value float64
+
         switch point.ValueType() {
         case pmetric.NumberDataPointValueTypeDouble:
             value = point.DoubleValue()
