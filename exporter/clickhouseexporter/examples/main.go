@@ -137,20 +137,19 @@ func main() {
     }
     fmt.Printf("\nTotal records in table: %d\n", recordCount)
 
-    // Query the last 5 metrics with a more lenient filter
+    // Query recent metrics with better formatting
     query := fmt.Sprintf(`
         SELECT 
-            timestamp,
+            timestamp_hour as timestamp,
             metric_name,
-            metric_type,
-            value,
-            labels,
-            service_name,
-            host_name
-        FROM %s.metrics
-        ORDER BY timestamp DESC 
+            avg_value,
+            max_value,
+            p90_value
+        FROM %s.metrics_hourly_table 
+        WHERE timestamp_hour >= now() - INTERVAL 1 HOUR
+        ORDER BY timestamp_hour DESC
         LIMIT 15
-    `, database)
+    `, database)  // Use database from environment variable
 
     rows, err := conn.Query(query)
     if err != nil {
@@ -158,24 +157,35 @@ func main() {
     }
     defer rows.Close()
 
-    fmt.Println("\nLast 15 metrics in the database:")
+    // Print header
+    fmt.Println("\nRecent metrics (last hour):")
     fmt.Println("--------------------------------------------------")
+    fmt.Printf("%-25s %-15s %-15s %-15s %-15s\n", 
+        "Timestamp", "Metric", "Avg Value", "Max Value", "P90 Value")
+    fmt.Println("--------------------------------------------------")
+    
+    // Iterate through results
     for rows.Next() {
         var (
             ts          time.Time
             metricName  string
-            metricType  string
-            value       float64
-            labels      map[string]string
-            serviceName string
-            hostName    string
+            avgValue    float64
+            maxValue    float64
+            p90Value    float64
         )
-        if err := rows.Scan(&ts, &metricName, &metricType, &value, &labels, &serviceName, &hostName); err != nil {
+        if err := rows.Scan(&ts, &metricName, &avgValue, &maxValue, &p90Value); err != nil {
             log.Printf("Error scanning row: %v", err)
             continue
         }
-        fmt.Printf("Time: %v\nMetric: %s\nType: %s\nValue: %f\nLabels: %v\nService: %s\nHost: %s\n\n",
-            ts, metricName, metricType, value, labels, serviceName, hostName)
+        
+        // Format values for better readability
+        fmt.Printf("%-25s %-15s %-15.2f %-15.2f %-15.2f\n",
+            ts.Format("2006-01-02 15:04:05"),
+            metricName,
+            avgValue,
+            maxValue,
+            p90Value,
+        )
     }
 
     if err := rows.Err(); err != nil {
