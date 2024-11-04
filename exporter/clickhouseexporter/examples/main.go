@@ -75,11 +75,17 @@ func main() {
 
     // Create sample metrics
     metrics := createSampleMetrics()
+    fmt.Printf("Created sample metrics with %d resource metrics\n", 
+        metrics.ResourceMetrics().Len())
 
     // Export metrics
     if err := exp.ConsumeMetrics(ctx, metrics); err != nil {
-        log.Printf("Failed to export metrics: %v", err)
+        log.Fatalf("Failed to export metrics: %v", err)
     }
+    fmt.Println("Successfully exported metrics")
+
+    // Add a delay to ensure metrics are written
+    time.Sleep(time.Second * 2)
 
     // Get configuration from environment variables
     endpoint := os.Getenv("CLICKHOUSE_ENDPOINT")
@@ -104,8 +110,35 @@ func main() {
         },
     })
 
-    // Query the last 5 metrics inserted
-    rows, err := conn.Query(`
+    // First, verify the table exists
+    tableCheckQuery := fmt.Sprintf(`
+        SELECT count()
+        FROM system.tables
+        WHERE database = '%s' AND name = 'metrics'
+    `, database)
+    
+    var tableCount int
+    if err := conn.QueryRow(tableCheckQuery).Scan(&tableCount); err != nil {
+        log.Fatalf("Failed to check table existence: %v", err)
+    }
+    if tableCount == 0 {
+        log.Fatalf("Table '%s.metrics' does not exist", database)
+    }
+
+    // Check if any data exists
+    countQuery := fmt.Sprintf(`
+        SELECT count()
+        FROM %s.metrics
+    `, database)
+    
+    var recordCount int
+    if err := conn.QueryRow(countQuery).Scan(&recordCount); err != nil {
+        log.Fatalf("Failed to count records: %v", err)
+    }
+    fmt.Printf("\nTotal records in table: %d\n", recordCount)
+
+    // Query the last 5 metrics with a more lenient filter
+    query := fmt.Sprintf(`
         SELECT 
             timestamp,
             metric_name,
@@ -114,16 +147,18 @@ func main() {
             labels,
             service_name,
             host_name
-        FROM otel.metrics 
+        FROM %s.metrics
         ORDER BY timestamp DESC 
-        LIMIT 5
-    `)
+        LIMIT 15
+    `, database)
+
+    rows, err := conn.Query(query)
     if err != nil {
         log.Fatalf("Failed to query metrics: %v", err)
     }
     defer rows.Close()
 
-    fmt.Println("\nLast 5 metrics in the database:")
+    fmt.Println("\nLast 15 metrics in the database:")
     fmt.Println("--------------------------------------------------")
     for rows.Next() {
         var (
